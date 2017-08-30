@@ -81,7 +81,7 @@ class PTBModel(object):
 
         self.final_state = states[-1]
 
-		# tf.concat(outputs) -> tf.concat(outputs, 1)
+	# tf.concat(outputs) -> tf.concat(outputs, 1)
         output = tf.reshape(tf.concat(outputs, 1), [-1, size])
         w = tf.get_variable("softmax_w",
                                     [size, vocab_size],
@@ -118,7 +118,7 @@ def run_epoch(sess, model, data, verbose=False):
     iters = 0
 
     # initial RNN state
-	# state = model.initial_state.eval() ->
+    # state = model.initial_state.eval() ->
     state = sess.run(model.initial_state)
 
     for step, (x, y) in enumerate(ptb_reader.ptb_iterator(data, model.batch_size, model.num_steps)):
@@ -217,7 +217,7 @@ with tf.Graph().as_default(), tf.Session() as sess:
         print("Epoch: {} Validation Perplexity: {:.3f} (Cost: {:.3f})".format(i + 1, valid_perp, valid_cost))
         valid_costs.append(valid_cost)
         valid_perps.append(valid_perp)
-
+        # saver.save(sess, checkpoint_path + 'checkpoint') ->
         saver.save(sess, checkpoint_path + 'checkpoint.ckpt')
 
     # run test pass
