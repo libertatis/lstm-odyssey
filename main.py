@@ -9,7 +9,7 @@ import pandas as pd
 import tensorflow as tf
 
 from tensorflow.python.ops import rnn_cell
-from tensorflow.python.ops.seq2seq import sequence_loss_by_example
+# from tensorflow.python.ops.seq2seq import sequence_loss_by_example
 
 # parses the dataset
 import ptb_reader
@@ -50,7 +50,8 @@ class PTBModel(object):
         lstm_cell = CellType(size)
         if is_training and config.keep_prob < 1:
             lstm_cell = rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)
-        cell = rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers)
+        #cell = rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers) ->
+        cell = rnn_cell.MultiRNNCell([lstm_cell for _ in range(config.num_layers)])
         self.initial_state = cell.zero_state(batch_size, tf.float32)
 
         # initializer used for reusable variable initializer (see `get_variable`)
@@ -80,7 +81,8 @@ class PTBModel(object):
 
         self.final_state = states[-1]
 
-        output = tf.reshape(tf.concat(1, outputs), [-1, size])
+		# tf.concat(outputs) -> tf.concat(outputs, 1)
+        output = tf.reshape(tf.concat(outputs, 1), [-1, size])
         w = tf.get_variable("softmax_w",
                                     [size, vocab_size],
                                     initializer=initializer)
@@ -91,7 +93,7 @@ class PTBModel(object):
         weights = tf.ones([batch_size * num_steps]) # used to scale the loss average
 
         # computes loss and performs softmax on our fully-connected output layer
-        loss = sequence_loss_by_example([logits], [targets], [weights], vocab_size)
+        loss = tf.contrib.legacy_seq2seq.sequence_loss_by_example([logits], [targets], [weights], vocab_size)
         self.cost = cost = tf.div(tf.reduce_sum(loss), batch_size, name="cost")
 
         if is_training:
@@ -116,7 +118,8 @@ def run_epoch(sess, model, data, verbose=False):
     iters = 0
 
     # initial RNN state
-    state = model.initial_state.eval()
+	# state = model.initial_state.eval() ->
+    state = sess.run(model.initial_state)
 
     for step, (x, y) in enumerate(ptb_reader.ptb_iterator(data, model.batch_size, model.num_steps)):
         cost, state, _ = sess.run([model.cost, model.final_state, model.train_op], feed_dict={
@@ -132,7 +135,7 @@ def run_epoch(sess, model, data, verbose=False):
         if verbose and step % 10 == 0:
             progress = (step / epoch_size) * 100
             wps = iters * model.batch_size / (time.time() - start_time)
-            print("%.1f%% Perplexity: %.3f (Cost: %.3f) Speed: %.0f wps" % (progress, perplexity, cost, wps))
+            print("{:.1f}% Perplexity: {:.3f} (Cost: {:.3f}) Speed: {:.0f} wps".format(progress, perplexity, cost, wps))
 
     return (costs / iters), perplexity
 
@@ -190,10 +193,10 @@ with tf.Graph().as_default(), tf.Session() as sess:
     saver = tf.train.Saver(max_to_keep=1)
 
     # initialize our variables
-    sess.run(tf.initialize_all_variables())
+    sess.run(tf.global_variables_initializer())
 
     # save the graph definition as a protobuf file
-    tf.train.write_graph(sess.graph_def, model_path, '%s.pb'.format(model_name), as_text=False)
+    tf.train.write_graph(sess.graph_def, model_path, '{}.pb'.format(model_name), as_text=False)
 
     train_costs = []
     train_perps = []
@@ -201,25 +204,25 @@ with tf.Graph().as_default(), tf.Session() as sess:
     valid_perps = []
 
     for i in range(num_epochs):
-        print("Epoch: %d Learning Rate: %.3f" % (i + 1, sess.run(train_model.lr)))
+        print("Epoch: {} Learning Rate: {:.3f}".format(i + 1, sess.run(train_model.lr)))
 
         # run training pass
         train_cost, train_perp = run_epoch(sess, train_model, train_data, verbose=True)
-        print("Epoch: %i Training Perplexity: %.3f (Cost: %.3f)" % (i + 1, train_perp, train_cost))
+        print("Epoch: {} Training Perplexity: {:.3f} (Cost: {:.3f})".format(i + 1, train_perp, train_cost))
         train_costs.append(train_cost)
         train_perps.append(train_perp)
 
         # run validation pass
         valid_cost, valid_perp = run_epoch(sess, valid_model, valid_data)
-        print("Epoch: %i Validation Perplexity: %.3f (Cost: %.3f)" % (i + 1, valid_perp, valid_cost))
+        print("Epoch: {} Validation Perplexity: {:.3f} (Cost: {:.3f})".format(i + 1, valid_perp, valid_cost))
         valid_costs.append(valid_cost)
         valid_perps.append(valid_perp)
 
-        saver.save(sess, checkpoint_path + 'checkpoint')
+        saver.save(sess, checkpoint_path + 'checkpoint.ckpt')
 
     # run test pass
     test_cost, test_perp = run_epoch(sess, test_model, test_data)
-    print("Test Perplexity: %.3f (Cost: %.3f)" % (test_perp, test_cost))
+    print("Test Perplexity: {:.3f} (Cost: {:.3f})".format(test_perp, test_cost))
 
     write_csv(train_costs, os.path.join(summary_path, "train_costs.csv"))
     write_csv(train_perps, os.path.join(summary_path, "train_perps.csv"))
